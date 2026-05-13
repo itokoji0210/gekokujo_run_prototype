@@ -15,7 +15,7 @@ const resultTitle = document.getElementById("resultTitle");
 const resultText = document.getElementById("resultText");
 const restartBtn = document.getElementById("restartBtn");
 
-const laneX = [-68, 68];
+const ROAD_MARGIN = 58;
 const ranks = ["農民", "足軽", "武士", "家老", "大名", "天下人"];
 const events = [
   { text: "信長に気に入られた！", delta: 18 },
@@ -33,6 +33,8 @@ let audioCtx;
 let lastTime = 0;
 let toastTimer = 0;
 let keys = { left: false, right: false };
+let touchStartX = 0;
+let touchStartTargetX = 0;
 
 function resetGame(nextStage = 1) {
   const requirement = 105 + nextStage * 35;
@@ -42,11 +44,10 @@ function resetGame(nextStage = 1) {
     army: 3,
     rankIndex: Math.min(nextStage - 1, ranks.length - 1),
     distance: 0,
-    lane: 0,
     x: 0,
     targetX: 0,
     speed: 0,
-    trackLength: 4100 + nextStage * 260,
+    trackLength: 5600 + nextStage * 400,
     requirement,
     gates: [],
     eventMarkers: [],
@@ -55,7 +56,7 @@ function resetGame(nextStage = 1) {
     castleHit: 0,
     winDelay: 0,
   };
-  state.x = canvas.width / 2 + laneX[state.lane];
+  state.x = canvas.width / 2;
   state.targetX = state.x;
   buildStage();
   updateHud();
@@ -102,12 +103,14 @@ function startGame() {
   if (state.mode === "ready") {
     unlockAudio();
     state.mode = "run";
-    state.speed = 250;
+    state.speed = 178;
     actionBtn.textContent = "突撃";
     showToast("下剋上開始！");
     drum(90, 0.04);
   } else if (state.mode === "castle") {
     resolveCastle();
+  } else if (state.mode === "result") {
+    restart();
   }
 }
 
@@ -115,9 +118,8 @@ function update(dt) {
   if (state.mode === "run") {
     state.distance += state.speed * dt;
     const input = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-    if (input) moveLane(input);
-    state.targetX = canvas.width / 2 + laneX[state.lane];
-    state.x += (state.targetX - state.x) * Math.min(1, dt * 9);
+    if (input) moveBy(input * 340 * dt);
+    state.x += (state.targetX - state.x) * Math.min(1, dt * 13);
     checkGates();
     checkEvents();
     if (state.distance >= state.trackLength) enterCastle();
@@ -143,19 +145,21 @@ function update(dt) {
   }
 }
 
-function moveLane(dir) {
-  const next = Math.max(0, Math.min(laneX.length - 1, state.lane + dir));
-  if (next !== state.lane) {
-    state.lane = next;
-    tick(360, 0.025);
-  }
+function clampX(value) {
+  return Math.max(ROAD_MARGIN, Math.min(canvas.width - ROAD_MARGIN, value));
+}
+
+function moveBy(amount) {
+  const before = state.targetX;
+  state.targetX = clampX(state.targetX + amount);
+  if (Math.abs(state.targetX - before) > 4) tick(360, 0.018);
 }
 
 function checkGates() {
   for (const gate of state.gates) {
     if (gate.passed || state.distance < gate.z) continue;
     gate.passed = true;
-    const pick = state.lane === 0 ? gate.left : gate.right;
+    const pick = state.x < canvas.width / 2 ? gate.left : gate.right;
     applyGate(pick);
   }
 }
@@ -486,15 +490,11 @@ function loop(time) {
 
 function resize() {
   const rect = canvas.getBoundingClientRect();
-  const scale = window.devicePixelRatio || 1;
-  canvas.width = Math.round(rect.width * scale);
-  canvas.height = Math.round(rect.height * scale);
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
   canvas.width = Math.round(rect.width);
   canvas.height = Math.round(rect.height);
   if (state) {
-    state.x = canvas.width / 2 + laneX[state.lane];
-    state.targetX = state.x;
+    state.x = clampX(state.x || canvas.width / 2);
+    state.targetX = clampX(state.targetX || canvas.width / 2);
   }
 }
 
@@ -547,11 +547,11 @@ restartBtn.addEventListener("click", restart);
 
 leftBtn.addEventListener("pointerdown", () => {
   keys.left = true;
-  moveLane(-1);
+  moveBy(-70);
 });
 rightBtn.addEventListener("pointerdown", () => {
   keys.right = true;
-  moveLane(1);
+  moveBy(70);
 });
 ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
   leftBtn.addEventListener(eventName, () => (keys.left = false));
@@ -561,11 +561,11 @@ rightBtn.addEventListener("pointerdown", () => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") {
     keys.left = true;
-    moveLane(-1);
+    moveBy(-42);
   }
   if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") {
     keys.right = true;
-    moveLane(1);
+    moveBy(42);
   }
   if (event.key === " " || event.key === "Enter") startGame();
 });
@@ -575,20 +575,24 @@ window.addEventListener("keyup", (event) => {
   if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") keys.right = false;
 });
 
-let dragStartX = 0;
 canvas.addEventListener("pointerdown", (event) => {
-  dragStartX = event.clientX;
+  event.preventDefault();
+  canvas.setPointerCapture?.(event.pointerId);
   unlockAudio();
+  touchStartX = event.clientX;
+  touchStartTargetX = state.targetX || canvas.width / 2;
+  if (state.mode === "ready") startGame();
 });
 canvas.addEventListener("pointermove", (event) => {
-  const dx = event.clientX - dragStartX;
-  if (Math.abs(dx) > 36) {
-    moveLane(dx > 0 ? 1 : -1);
-    dragStartX = event.clientX;
-  }
+  event.preventDefault();
+  const dx = (event.clientX - touchStartX) * 1.15;
+  state.targetX = clampX(touchStartTargetX + dx);
 });
-canvas.addEventListener("pointerup", () => {
-  if (state.mode === "ready") startGame();
+canvas.addEventListener("pointerup", (event) => {
+  canvas.releasePointerCapture?.(event.pointerId);
+});
+canvas.addEventListener("pointercancel", (event) => {
+  canvas.releasePointerCapture?.(event.pointerId);
 });
 
 window.addEventListener("resize", resize);

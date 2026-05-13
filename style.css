@@ -26,6 +26,7 @@ body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
   touch-action: none;
+  overscroll-behavior: none;
   user-select: none;
 }
 
@@ -60,6 +61,7 @@ button {
   display: block;
   width: 100%;
   height: 100%;
+  touch-action: none;
 }
 
 .hud {
@@ -265,5 +267,31 @@ button {
 
   .toast {
     top: 82px;
+  }
+}
+
+@media (max-width: 520px) {
+  .shell {
+    padding: 0;
+  }
+
+  .game-wrap {
+    width: 100vw;
+    height: 100svh;
+    min-height: 0;
+    border-width: 0;
+    border-radius: 0;
+  }
+
+  .hud-top {
+    top: max(8px, env(safe-area-inset-top));
+  }
+
+  .hud-bottom {
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .move-btn {
+    width: 58px;
   }
 }
