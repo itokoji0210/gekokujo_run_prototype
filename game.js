@@ -38,6 +38,12 @@ const events = [
   { text: "疫病が流行った！", factor: 0.66 },
   { text: "下剋上の噂が広まる！", delta: 30 },
 ];
+const enemyTypes = [
+  { key: "zako", name: "雑兵", icon: "兵", color: "#6b2629", reward: 7, lossRate: 0.75, sway: 14 },
+  { key: "cavalry", name: "騎馬隊", icon: "馬", color: "#7c3f22", reward: 16, lossRate: 1.2, sway: 86 },
+  { key: "general", name: "敵将", icon: "将", color: "#402a55", reward: 38, lossRate: 1.6, sway: 18 },
+  { key: "shogun", name: "将軍", icon: "将軍", color: "#17120f", reward: 90, lossRate: 2.1, sway: 0 },
+];
 
 let state;
 let audioCtx;
@@ -48,6 +54,23 @@ let toastTimer = 0;
 let keys = { left: false, right: false };
 let touchStartX = 0;
 let touchStartTargetX = 0;
+let meta = loadMeta();
+
+function loadMeta() {
+  try {
+    return JSON.parse(localStorage.getItem("gekokujouRunMeta")) || { koku: 0, bestArmy: 3, wins: 0 };
+  } catch {
+    return { koku: 0, bestArmy: 3, wins: 0 };
+  }
+}
+
+function saveMeta() {
+  try {
+    localStorage.setItem("gekokujouRunMeta", JSON.stringify(meta));
+  } catch {
+    // Storage can be unavailable in private browsing; the run still works.
+  }
+}
 
 function resetGame(nextStage = 1) {
   const requirement = 105 + nextStage * 35;
@@ -112,18 +135,35 @@ function buildStage() {
     state.eventMarkers.push({ z, used: false, event: sample(events) });
   }
 
-  for (let z = 1220; z < state.trackLength - 900; z += 980) {
+  for (let z = 980; z < state.trackLength - 900; z += 710) {
+    const roll = Math.random();
+    const type = roll > 0.86 ? enemyTypes[2] : roll > 0.56 ? enemyTypes[1] : enemyTypes[0];
     state.enemies.push({
       z,
-      x: canvas.width / 2 + (Math.random() > 0.5 ? -58 : 58),
-      count: 8 + state.stage * 3 + Math.floor(Math.random() * 12),
+      baseX: canvas.width / 2 + (Math.random() > 0.5 ? -58 : 58),
+      count: enemyCount(type),
+      type,
       hit: false,
     });
   }
+  state.enemies.push({
+    z: state.trackLength - 520,
+    baseX: canvas.width / 2,
+    count: 72 + state.stage * 28,
+    type: enemyTypes[3],
+    hit: false,
+  });
 }
 
 function sample(list) {
   return { ...list[Math.floor(Math.random() * list.length)] };
+}
+
+function enemyCount(type) {
+  const base = 8 + state.stage * 4 + Math.floor(Math.random() * 12);
+  if (type.key === "cavalry") return base + 18;
+  if (type.key === "general") return base + 42;
+  return base;
 }
 
 function startGame() {
@@ -205,16 +245,42 @@ function checkEnemies() {
   for (const enemy of state.enemies) {
     const y = projectZ(enemy.z);
     if (enemy.hit || y < canvas.height * 0.59 || y > canvas.height * 0.82) continue;
-    if (Math.abs(state.x - enemy.x) > 52) continue;
+    const ex = enemyX(enemy);
+    if (Math.abs(state.x - ex) > enemyHitRadius(enemy)) continue;
     enemy.hit = true;
-    const loss = Math.min(state.army - 1, enemy.count);
-    setArmy(state.army - loss);
-    showToast(`敵襲！ -${loss}`);
-    combo(`-${loss}`);
-    burst(enemy.x, y, "#d73b2e", 18);
-    state.shake = 12;
-    battleSound();
+    if (state.army >= enemy.count) {
+      const gain = Math.floor(enemy.type.reward * (state.feverTimer > 0 ? 1.55 : 1));
+      setArmy(state.army + gain);
+      state.comboChain += enemy.type.key === "shogun" ? 2 : 1;
+      showToast(`${enemy.type.name}を寝返らせた！ +${gain}`);
+      combo(`撃破 +${gain}`);
+      burst(ex, y, enemy.type.key === "shogun" ? "#f7b538" : "#22a06b", enemy.type.key === "shogun" ? 48 : 24);
+      rewardSound(state.comboChain + 1);
+      if (enemy.type.key === "shogun") enterFever();
+    } else {
+      const loss = Math.min(state.army - 1, Math.ceil(enemy.count * enemy.type.lossRate));
+      setArmy(state.army - loss);
+      state.comboChain = 0;
+      showToast(`${enemy.type.name}襲来！ -${loss}`);
+      combo(`-${loss}`);
+      burst(ex, y, "#d73b2e", enemy.type.key === "cavalry" ? 30 : 18);
+      battleSound(enemy.type.key);
+    }
+    state.shake = enemy.type.key === "shogun" ? 18 : 12;
   }
+}
+
+function enemyX(enemy) {
+  const phase = (state.distance - enemy.z) * 0.018;
+  if (enemy.type.key === "cavalry") return enemy.baseX + Math.sin(phase * 2.3) * enemy.type.sway;
+  if (enemy.type.key === "shogun") return canvas.width / 2 + Math.sin(phase) * 18;
+  return enemy.baseX + Math.sin(phase) * enemy.type.sway;
+}
+
+function enemyHitRadius(enemy) {
+  if (enemy.type.key === "shogun") return 74;
+  if (enemy.type.key === "cavalry") return 46;
+  return 52;
 }
 
 function checkEvents() {
@@ -278,21 +344,28 @@ function resolveCastle() {
     const beforeRank = ranks[state.rankIndex];
     state.rankIndex = Math.min(state.rankIndex + 1, ranks.length - 1);
     state.justEvolved = 2.2;
+    const earnedKoku = Math.floor(state.maxArmy * 1.5 + state.stage * 60 + state.comboChain * 25);
+    meta.koku += earnedKoku;
+    meta.wins += 1;
+    meta.bestArmy = Math.max(meta.bestArmy, state.maxArmy);
+    saveMeta();
     resultKicker.textContent = ranks[state.rankIndex] === "天下人" ? "天下統一" : "勝利";
     resultTitle.textContent = ranks[state.rankIndex] === "天下人" ? "天下を取った！" : "城を落とした！";
     evolutionEl.textContent = `${beforeRank} から ${ranks[state.rankIndex]} へ進化`;
     evolutionEl.classList.remove("flash");
     void evolutionEl.offsetWidth;
     evolutionEl.classList.add("flash");
-    resultText.textContent = `${ranks[state.rankIndex]}へ昇格。兵力${state.army}で押し切った。`;
+    resultText.textContent = `石高+${earnedKoku}。累計${meta.koku}石。最大兵力${meta.bestArmy}。`;
     actionBtn.textContent = "次の戦";
     evolveSound();
   } else {
+    meta.bestArmy = Math.max(meta.bestArmy, state.maxArmy);
+    saveMeta();
     resultKicker.textContent = "敗北";
     resultTitle.textContent = "城門で解散！";
     evolutionEl.textContent = "";
     evolutionEl.classList.remove("flash");
-    resultText.textContent = `あと${state.requirement - state.army}人。成り上がり失敗。`;
+    resultText.textContent = `あと${state.requirement - state.army}人。累計${meta.koku}石、最大兵力${meta.bestArmy}。`;
     actionBtn.textContent = "再出陣";
     slash();
   }
@@ -487,18 +560,37 @@ function drawEnemies() {
   for (const enemy of state.enemies) {
     const y = projectZ(enemy.z);
     if (enemy.hit || y < -80 || y > canvas.height + 110) continue;
-    ctx.fillStyle = "#641f24";
-    roundRect(enemy.x - 38, y - 23, 76, 46, 8);
+    const ex = enemyX(enemy);
+    const width = enemy.type.key === "shogun" ? 104 : 80;
+    const height = enemy.type.key === "shogun" ? 58 : 46;
+    ctx.fillStyle = enemy.type.color;
+    roundRect(ex - width / 2, y - height / 2, width, height, 8);
     ctx.fill();
     ctx.strokeStyle = "#191715";
     ctx.lineWidth = 3;
     ctx.stroke();
+    if (enemy.type.key === "cavalry") {
+      ctx.strokeStyle = "#f7b538";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(ex - 52, y);
+      ctx.lineTo(ex - 88, y + 12);
+      ctx.stroke();
+    }
+    if (enemy.type.key === "shogun") {
+      ctx.strokeStyle = "#f7b538";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(ex, y, 44 + Math.sin(performance.now() / 100) * 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = "#fff8e6";
-    ctx.font = "950 18px system-ui";
+    ctx.font = enemy.type.key === "shogun" ? "950 18px system-ui" : "950 16px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(`敵 ${enemy.count}`, enemy.x, y + 1);
-    for (let i = 0; i < 5; i++) drawUnit(enemy.x - 24 + i * 12, y + 36 + (i % 2) * 4, i, true);
+    ctx.fillText(`${enemy.type.icon} ${enemy.count}`, ex, y + 1);
+    const units = enemy.type.key === "shogun" ? 7 : 5;
+    for (let i = 0; i < units; i++) drawUnit(ex - 30 + i * 10, y + 36 + (i % 2) * 4, i, true, enemy.type);
   }
 }
 
@@ -590,8 +682,14 @@ function drawFever() {
   ctx.fillText(text, canvas.width / 2, 190);
 }
 
-function drawUnit(x, y, i, enemy = false) {
-  const look = enemy ? { body: "#641f24", head: "#191715", weapon: "spear", crest: "" } : rankLooks[state.rankIndex];
+function drawUnit(x, y, i, enemy = false, enemyType = enemyTypes[0]) {
+  const enemyLook = {
+    body: enemyType.color,
+    head: "#191715",
+    weapon: enemyType.key === "cavalry" || enemyType.key === "shogun" ? "spear" : "sword",
+    crest: enemyType.key === "general" || enemyType.key === "shogun" ? "helmet" : "",
+  };
+  const look = enemy ? enemyLook : rankLooks[state.rankIndex];
   const scale = state.justEvolved > 0 && !enemy ? 1 + Math.sin(performance.now() / 55 + i) * 0.16 : 1;
   ctx.save();
   ctx.translate(x, y);
@@ -633,6 +731,15 @@ function drawUnit(x, y, i, enemy = false) {
     ctx.moveTo(9, -13);
     ctx.lineTo(16, 12);
     ctx.stroke();
+  }
+  if (enemy && enemyType.key === "cavalry") {
+    ctx.fillStyle = "#2b2019";
+    ctx.fillRect(-9, 9, 18, 6);
+    ctx.fillStyle = "#17120f";
+    ctx.beginPath();
+    ctx.arc(-7, 16, 3, 0, Math.PI * 2);
+    ctx.arc(7, 16, 3, 0, Math.PI * 2);
+    ctx.fill();
   }
   if (look.weapon === "sword") {
     ctx.strokeStyle = "#d8d0be";
@@ -764,9 +871,15 @@ function slash() {
   noise(0.09, 0.045, 0.02);
 }
 
-function battleSound() {
-  [88, 110, 92, 145].forEach((freq, i) => tone(freq, 0.1, i % 2 ? "sawtooth" : "triangle", 0.05, i * 0.05));
+function battleSound(type = "zako") {
+  const heavy = type === "shogun" || type === "cavalry";
+  [88, 110, 92, heavy ? 72 : 145].forEach((freq, i) => tone(freq, 0.1, i % 2 ? "sawtooth" : "triangle", heavy ? 0.06 : 0.05, i * 0.05));
   noise(0.18, 0.04, 0.08);
+  if (type === "cavalry") horagai(0.1);
+  if (type === "shogun") {
+    horagai(0.02);
+    horagai(0.32);
+  }
 }
 
 function rewardSound(chain = 1) {
@@ -790,27 +903,46 @@ function feverSound() {
 
 function warCry() {
   drum(72, 0.08);
+  horagai(0.05);
   tone(146, 0.22, "sawtooth", 0.035, 0.08);
   tone(220, 0.18, "triangle", 0.03, 0.18);
   noise(0.12, 0.02, 0.2);
 }
 
+function shamisen(freq, delay = 0, volume = 0.018) {
+  tone(freq, 0.045, "sawtooth", volume, delay);
+  tone(freq * 2.01, 0.032, "square", volume * 0.35, delay + 0.005);
+  noise(0.018, volume * 0.55, delay);
+}
+
+function shinobue(freq, delay = 0, volume = 0.018) {
+  tone(freq, 0.28, "sine", volume, delay);
+  tone(freq * 2, 0.22, "triangle", volume * 0.22, delay + 0.02);
+}
+
+function horagai(delay = 0) {
+  tone(116, 0.42, "sawtooth", 0.024, delay);
+  tone(174, 0.34, "triangle", 0.017, delay + 0.06);
+}
+
 function startBgm() {
   if (bgmTimer || !audioCtx) return;
   bgmStep = 0;
-  bgmTimer = setInterval(playBgmStep, 185);
+  bgmTimer = setInterval(playBgmStep, 150);
 }
 
 function playBgmStep() {
   if (!audioCtx || state.mode === "ready" || state.mode === "result") return;
-  const scale = [147, 165, 196, 220, 247, 294, 330, 392];
-  const pattern = [0, 2, 4, 2, 5, 4, 2, 1, 0, 3, 5, 7, 5, 4, 2, 1];
+  const scale = [146.83, 164.81, 196, 220, 246.94, 293.66, 329.63, 392];
+  const pattern = [0, 2, 4, 5, 4, 2, 0, 1, 0, 3, 5, 7, 5, 4, 2, 1];
   const step = bgmStep % pattern.length;
   const fever = state.feverTimer > 0;
-  if (step % 2 === 0) drum(step % 4 === 0 ? 58 : 74, fever ? 0.045 : 0.028);
-  if (step % 4 === 2) noise(0.035, 0.014);
-  tone(scale[pattern[step]] * (fever ? 1.5 : 1), 0.105, "triangle", fever ? 0.028 : 0.017);
-  if (step === 8 || (fever && step === 12)) tone(440, 0.24, "sawtooth", 0.018);
+  if (step % 2 === 0) drum(step % 4 === 0 ? 54 : 74, fever ? 0.052 : 0.034);
+  if (step % 4 === 2) noise(0.035, 0.016);
+  shamisen(scale[pattern[step]] * (fever ? 1.5 : 1), 0, fever ? 0.026 : 0.018);
+  if (step === 0 || step === 8) shinobue(587.33 * (fever ? 1.25 : 1), 0.01, fever ? 0.024 : 0.014);
+  if (step === 6 || step === 14) shamisen(scale[pattern[step]] * 0.5, 0.07, fever ? 0.028 : 0.018);
+  if (step === 12 && (fever || state.stage > 1)) horagai(0.02);
   bgmStep += 1;
 }
 
