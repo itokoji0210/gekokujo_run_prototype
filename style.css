@@ -198,6 +198,10 @@ button {
   background: rgba(25, 23, 21, 0.56);
 }
 
+.result[hidden] {
+  display: none;
+}
+
 .result-panel {
   width: min(100%, 350px);
   padding: 24px 18px 18px;
