@@ -13,10 +13,21 @@ const resultEl = document.getElementById("result");
 const resultKicker = document.getElementById("resultKicker");
 const resultTitle = document.getElementById("resultTitle");
 const resultText = document.getElementById("resultText");
+const evolutionEl = document.getElementById("evolution");
 const restartBtn = document.getElementById("restartBtn");
 
 const ROAD_MARGIN = 58;
+const GATE_WIDTH = 94;
+const GATE_HEIGHT = 74;
 const ranks = ["農民", "足軽", "武士", "家老", "大名", "天下人"];
+const rankLooks = [
+  { body: "#d9b56d", head: "#191715", weapon: "", crest: "" },
+  { body: "#2278a8", head: "#191715", weapon: "spear", crest: "" },
+  { body: "#b23a34", head: "#191715", weapon: "sword", crest: "helmet" },
+  { body: "#6e4bb3", head: "#191715", weapon: "sword", crest: "helmet" },
+  { body: "#d8a52d", head: "#191715", weapon: "banner", crest: "helmet" },
+  { body: "#f5efe0", head: "#191715", weapon: "banner", crest: "crown" },
+];
 const events = [
   { text: "信長に気に入られた！", delta: 18 },
   { text: "茶会で支持率UP！", delta: 12 },
@@ -50,11 +61,13 @@ function resetGame(nextStage = 1) {
     trackLength: 5600 + nextStage * 400,
     requirement,
     gates: [],
+    enemies: [],
     eventMarkers: [],
     particles: [],
     shake: 0,
     castleHit: 0,
     winDelay: 0,
+    justEvolved: 0,
   };
   state.x = canvas.width / 2;
   state.targetX = state.x;
@@ -93,6 +106,15 @@ function buildStage() {
   for (let z = 890; z < state.trackLength - 850; z += 880) {
     state.eventMarkers.push({ z, used: false, event: sample(events) });
   }
+
+  for (let z = 1220; z < state.trackLength - 900; z += 980) {
+    state.enemies.push({
+      z,
+      x: canvas.width / 2 + (Math.random() > 0.5 ? -58 : 58),
+      count: 8 + state.stage * 3 + Math.floor(Math.random() * 12),
+      hit: false,
+    });
+  }
 }
 
 function sample(list) {
@@ -121,6 +143,7 @@ function update(dt) {
     if (input) moveBy(input * 340 * dt);
     state.x += (state.targetX - state.x) * Math.min(1, dt * 13);
     checkGates();
+    checkEnemies();
     checkEvents();
     if (state.distance >= state.trackLength) enterCastle();
   }
@@ -131,6 +154,7 @@ function update(dt) {
     if (state.winDelay > 0.9) resolveCastle();
   }
 
+  if (state.justEvolved > 0) state.justEvolved -= dt;
   state.shake *= 0.88;
   state.particles = state.particles.filter((p) => {
     p.x += p.vx * dt;
@@ -159,8 +183,30 @@ function checkGates() {
   for (const gate of state.gates) {
     if (gate.passed || state.distance < gate.z) continue;
     gate.passed = true;
-    const pick = state.x < canvas.width / 2 ? gate.left : gate.right;
-    applyGate(pick);
+    const leftHit = Math.abs(state.x - gateLeftX()) < GATE_WIDTH * 0.48;
+    const rightHit = Math.abs(state.x - gateRightX()) < GATE_WIDTH * 0.48;
+    if (leftHit && !rightHit) applyGate(gate.left);
+    if (rightHit && !leftHit) applyGate(gate.right);
+    if (!leftHit && !rightHit) {
+      showToast("門を素通りした");
+      tick(150, 0.018);
+    }
+  }
+}
+
+function checkEnemies() {
+  for (const enemy of state.enemies) {
+    const y = projectZ(enemy.z);
+    if (enemy.hit || y < canvas.height * 0.59 || y > canvas.height * 0.82) continue;
+    if (Math.abs(state.x - enemy.x) > 52) continue;
+    enemy.hit = true;
+    const loss = Math.min(state.army - 1, enemy.count);
+    setArmy(state.army - loss);
+    showToast(`敵襲！ -${loss}`);
+    combo(`-${loss}`);
+    burst(enemy.x, y, "#d73b2e", 18);
+    state.shake = 12;
+    battleSound();
   }
 }
 
@@ -205,20 +251,28 @@ function resolveCastle() {
   state.mode = "result";
   const win = state.army >= state.requirement;
   if (win) {
+    const beforeRank = ranks[state.rankIndex];
     state.rankIndex = Math.min(state.rankIndex + 1, ranks.length - 1);
+    state.justEvolved = 2.2;
     resultKicker.textContent = ranks[state.rankIndex] === "天下人" ? "天下統一" : "勝利";
     resultTitle.textContent = ranks[state.rankIndex] === "天下人" ? "天下を取った！" : "城を落とした！";
+    evolutionEl.textContent = `${beforeRank} から ${ranks[state.rankIndex]} へ進化`;
+    evolutionEl.classList.remove("flash");
+    void evolutionEl.offsetWidth;
+    evolutionEl.classList.add("flash");
     resultText.textContent = `${ranks[state.rankIndex]}へ昇格。兵力${state.army}で押し切った。`;
     actionBtn.textContent = "次の戦";
-    fanfare(true);
+    evolveSound();
   } else {
     resultKicker.textContent = "敗北";
     resultTitle.textContent = "城門で解散！";
+    evolutionEl.textContent = "";
+    evolutionEl.classList.remove("flash");
     resultText.textContent = `あと${state.requirement - state.army}人。成り上がり失敗。`;
     actionBtn.textContent = "再出陣";
     slash();
   }
-  resultEl.hidden = false;
+  showResult();
 }
 
 function setArmy(value) {
@@ -247,6 +301,12 @@ function combo(text) {
 
 function hideResult() {
   resultEl.hidden = true;
+  resultEl.style.display = "none";
+}
+
+function showResult() {
+  resultEl.hidden = false;
+  resultEl.style.display = "grid";
 }
 
 function burst(x, y, color, count) {
@@ -273,6 +333,7 @@ function draw() {
   drawWorld();
   drawGates();
   drawEventMarkers();
+  drawEnemies();
   drawCastle();
   drawCrowd();
   drawParticles();
@@ -325,29 +386,56 @@ function projectZ(z) {
   return canvas.height - 120 - (z - state.distance) * 0.72;
 }
 
+function gateLeftX() {
+  return canvas.width / 2 - 72;
+}
+
+function gateRightX() {
+  return canvas.width / 2 + 72;
+}
+
 function drawGates() {
   for (const gate of state.gates) {
     const y = projectZ(gate.z);
     if (y < -120 || y > canvas.height + 80 || gate.passed) continue;
-    drawGate(canvas.width / 2 - 72, y, gate.left);
-    drawGate(canvas.width / 2 + 72, y, gate.right);
+    drawGate(gateLeftX(), y, gate.left);
+    drawGate(gateRightX(), y, gate.right);
   }
 }
 
 function drawGate(x, y, gate) {
-  const width = 116;
-  const height = 76;
-  ctx.fillStyle = gate.good ? "#1f9f72" : "#d73b2e";
+  const width = GATE_WIDTH;
+  const height = GATE_HEIGHT;
+  ctx.fillStyle = gate.good ? "#ead8a7" : "#bfa890";
   roundRect(x - width / 2, y - height / 2, width, height, 8);
   ctx.fill();
   ctx.strokeStyle = "#191715";
   ctx.lineWidth = 4;
   ctx.stroke();
-  ctx.fillStyle = "#fff8e6";
-  ctx.font = "900 20px system-ui";
+  ctx.fillStyle = gate.good ? "#1f7f5b" : "#8f2f2a";
+  ctx.font = "950 18px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  wrapText(gate.label, x, y, 96, 23);
+  wrapText(gate.label, x, y, 78, 22);
+}
+
+function drawEnemies() {
+  for (const enemy of state.enemies) {
+    const y = projectZ(enemy.z);
+    if (enemy.hit || y < -80 || y > canvas.height + 110) continue;
+    ctx.fillStyle = "#641f24";
+    roundRect(enemy.x - 38, y - 23, 76, 46, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#191715";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = "#fff8e6";
+    ctx.font = "950 18px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`敵 ${enemy.count}`, enemy.x, y + 1);
+    for (let i = 0; i < 5; i++) drawUnit(enemy.x - 24 + i * 12, y + 36 + (i % 2) * 4, i, true);
+  }
 }
 
 function drawEventMarkers() {
@@ -414,31 +502,67 @@ function drawCrowd() {
   ctx.fillText(state.army, state.x, startY - 36);
 }
 
-function drawUnit(x, y, i) {
-  const palette = ["#fff8e6", "#e8c36a", "#2374ab", "#d73b2e"];
-  ctx.fillStyle = "#191715";
+function drawUnit(x, y, i, enemy = false) {
+  const look = enemy ? { body: "#641f24", head: "#191715", weapon: "spear", crest: "" } : rankLooks[state.rankIndex];
+  const scale = state.justEvolved > 0 && !enemy ? 1 + Math.sin(performance.now() / 55 + i) * 0.16 : 1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = look.head;
   ctx.beginPath();
-  ctx.arc(x, y - 9, 4.5, 0, Math.PI * 2);
+  ctx.arc(0, -9, 4.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = palette[(i + state.rankIndex) % palette.length];
-  ctx.fillRect(x - 5, y - 5, 10, 12);
+  if (look.crest === "helmet") {
+    ctx.fillStyle = "#2d2a28";
+    ctx.fillRect(-7, -15, 14, 4);
+  }
+  if (look.crest === "crown") {
+    ctx.fillStyle = "#d8a52d";
+    ctx.beginPath();
+    ctx.moveTo(-7, -13);
+    ctx.lineTo(-3, -19);
+    ctx.lineTo(0, -13);
+    ctx.lineTo(4, -19);
+    ctx.lineTo(8, -13);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = look.body;
+  ctx.fillRect(-5, -5, 10, 12);
   ctx.strokeStyle = "#191715";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(x - 8, y + 4);
-  ctx.lineTo(x + 8, y + 4);
-  ctx.moveTo(x - 3, y + 7);
-  ctx.lineTo(x - 7, y + 14);
-  ctx.moveTo(x + 3, y + 7);
-  ctx.lineTo(x + 7, y + 14);
+  ctx.moveTo(-8, 4);
+  ctx.lineTo(8, 4);
+  ctx.moveTo(-3, 7);
+  ctx.lineTo(-7, 14);
+  ctx.moveTo(3, 7);
+  ctx.lineTo(7, 14);
   ctx.stroke();
-  if (state.rankIndex >= 2) {
-    ctx.strokeStyle = "#d8d0be";
+  if (look.weapon === "spear") {
+    ctx.strokeStyle = "#5a3a1f";
     ctx.beginPath();
-    ctx.moveTo(x + 8, y - 7);
-    ctx.lineTo(x + 15, y - 18);
+    ctx.moveTo(9, -13);
+    ctx.lineTo(16, 12);
     ctx.stroke();
   }
+  if (look.weapon === "sword") {
+    ctx.strokeStyle = "#d8d0be";
+    ctx.beginPath();
+    ctx.moveTo(8, -7);
+    ctx.lineTo(15, -18);
+    ctx.stroke();
+  }
+  if (look.weapon === "banner") {
+    ctx.strokeStyle = "#5a3a1f";
+    ctx.beginPath();
+    ctx.moveTo(10, -16);
+    ctx.lineTo(10, 14);
+    ctx.stroke();
+    ctx.fillStyle = state.rankIndex >= 5 ? "#d8a52d" : "#b23a34";
+    ctx.fillRect(10, -16, 13, 10);
+  }
+  ctx.restore();
 }
 
 function drawParticles() {
@@ -531,9 +655,22 @@ function slash() {
   setTimeout(() => tone(90, 0.12, "sawtooth", 0.035), 45);
 }
 
+function battleSound() {
+  [120, 95, 170, 80].forEach((freq, i) => {
+    setTimeout(() => tone(freq, 0.08, i % 2 ? "sawtooth" : "triangle", 0.045), i * 45);
+  });
+}
+
 function fanfare(big = false) {
   [420, 530, big ? 760 : 640].forEach((freq, i) => {
     setTimeout(() => tone(freq, 0.09, "square", 0.025), i * 70);
+  });
+}
+
+function evolveSound() {
+  drum(72, 0.07);
+  [196, 247, 294, 392, 523, 784].forEach((freq, i) => {
+    setTimeout(() => tone(freq, 0.12, i < 3 ? "triangle" : "square", 0.034), 90 + i * 72);
   });
 }
 
@@ -581,7 +718,7 @@ canvas.addEventListener("pointerdown", (event) => {
   unlockAudio();
   touchStartX = event.clientX;
   touchStartTargetX = state.targetX || canvas.width / 2;
-  if (state.mode === "ready") startGame();
+  if (state.mode === "ready") showToast("出陣を押して開始");
 });
 canvas.addEventListener("pointermove", (event) => {
   event.preventDefault();

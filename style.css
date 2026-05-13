@@ -201,7 +201,7 @@ button {
 }
 
 .result[hidden] {
-  display: none;
+  display: none !important;
 }
 
 .result-panel {
@@ -225,6 +225,18 @@ button {
   margin: 0;
   font-size: clamp(31px, 10vw, 48px);
   line-height: 1.02;
+}
+
+.evolution {
+  min-height: 34px;
+  margin-top: 12px;
+  color: #191715;
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.evolution.flash {
+  animation: shine 900ms ease both;
 }
 
 .result p {
@@ -252,6 +264,22 @@ button {
   100% {
     opacity: 0;
     transform: translateX(-50%) scale(1) rotate(0deg);
+  }
+}
+
+@keyframes shine {
+  0% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  45% {
+    opacity: 1;
+    color: #d73b2e;
+    transform: scale(1.13);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

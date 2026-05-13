@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>下剋上RUN</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <main class="shell">
@@ -35,10 +35,11 @@
         <button id="rightBtn" class="move-btn" type="button" aria-label="右へ">›</button>
       </div>
 
-      <div class="result" id="result" hidden>
+      <div class="result" id="result" hidden style="display: none;">
         <div class="result-panel">
           <p class="kicker" id="resultKicker">勝利</p>
           <h1 id="resultTitle">城を落とした！</h1>
+          <div class="evolution" id="evolution"></div>
           <p id="resultText">成り上がり継続中</p>
           <button id="restartBtn" type="button">もう一戦</button>
         </div>
@@ -46,6 +47,6 @@
     </section>
   </main>
 
-  <script src="game.js"></script>
+  <script src="game.js?v=4"></script>
 </body>
 </html>
