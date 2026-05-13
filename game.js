@@ -41,6 +41,8 @@ const events = [
 
 let state;
 let audioCtx;
+let bgmTimer;
+let bgmStep = 0;
 let lastTime = 0;
 let toastTimer = 0;
 let keys = { left: false, right: false };
@@ -68,6 +70,9 @@ function resetGame(nextStage = 1) {
     castleHit: 0,
     winDelay: 0,
     justEvolved: 0,
+    comboChain: 0,
+    feverTimer: 0,
+    maxArmy: 3,
   };
   state.x = canvas.width / 2;
   state.targetX = state.x;
@@ -79,18 +84,18 @@ function resetGame(nextStage = 1) {
 
 function buildStage() {
   const plus = [
-    { label: "+10 農民", type: "add", value: 10, good: true },
-    { label: "x2 兵力", type: "mul", value: 2, good: true },
-    { label: "+鉄砲隊", type: "add", value: 24, good: true },
-    { label: "+騎馬隊", type: "add", value: 18, good: true },
-    { label: "+兵糧", type: "add", value: 14, good: true },
+    { label: "徴兵令", sub: "+10", type: "add", value: 10, good: true, icon: "兵" },
+    { label: "天下の風", sub: "x2", type: "mul", value: 2, good: true, icon: "風" },
+    { label: "鉄砲隊", sub: "+24", type: "add", value: 24, good: true, icon: "砲" },
+    { label: "騎馬隊", sub: "+18", type: "add", value: 18, good: true, icon: "馬" },
+    { label: "米俵山盛", sub: "+14", type: "add", value: 14, good: true, icon: "米" },
   ];
   const minus = [
-    { label: "-一揆", type: "add", value: -14, good: false },
-    { label: "-裏切り", type: "mul", value: 0.62, good: false },
-    { label: "兵糧不足", type: "add", value: -18, good: false },
-    { label: "疫病", type: "mul", value: 0.55, good: false },
-    { label: "÷2 兵力", type: "mul", value: 0.5, good: false },
+    { label: "一揆勃発", sub: "-14", type: "add", value: -14, good: false, icon: "乱" },
+    { label: "謀反の密書", sub: "裏切り", type: "mul", value: 0.62, good: false, icon: "裏" },
+    { label: "兵糧焼失", sub: "-18", type: "add", value: -18, good: false, icon: "火" },
+    { label: "疫病の噂", sub: "危険", type: "mul", value: 0.55, good: false, icon: "病" },
+    { label: "落武者狩り", sub: "半減", type: "mul", value: 0.5, good: false, icon: "斬" },
   ];
 
   for (let z = 520; z < state.trackLength - 650; z += 590) {
@@ -128,7 +133,8 @@ function startGame() {
     state.speed = 178;
     actionBtn.textContent = "突撃";
     showToast("下剋上開始！");
-    drum(90, 0.04);
+    startBgm();
+    warCry();
   } else if (state.mode === "castle") {
     resolveCastle();
   } else if (state.mode === "result") {
@@ -142,6 +148,7 @@ function update(dt) {
     const input = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
     if (input) moveBy(input * 340 * dt);
     state.x += (state.targetX - state.x) * Math.min(1, dt * 13);
+    if (state.feverTimer > 0) state.feverTimer -= dt;
     checkGates();
     checkEnemies();
     checkEvents();
@@ -227,14 +234,31 @@ function checkEvents() {
 
 function applyGate(gate) {
   const before = state.army;
-  if (gate.type === "add") setArmy(state.army + gate.value);
-  if (gate.type === "mul") setArmy(Math.floor(state.army * gate.value));
+  const feverBonus = state.feverTimer > 0 && gate.good ? 1.7 : 1;
+  if (gate.type === "add") setArmy(state.army + Math.floor(gate.value * feverBonus));
+  if (gate.type === "mul") setArmy(Math.floor(state.army * (gate.good ? 1 + (gate.value - 1) * feverBonus : gate.value)));
   const diff = state.army - before;
-  showToast(gate.label);
-  combo(diff >= 0 ? `+${diff}` : `${diff}`);
+  if (gate.good) {
+    state.comboChain += 1;
+    if (state.comboChain >= 3) enterFever();
+  } else {
+    state.comboChain = 0;
+    state.feverTimer = Math.max(0, state.feverTimer - 1.4);
+  }
+  showToast(gate.good ? `${gate.label}！ 連鎖${state.comboChain}` : `${gate.label}！`);
+  combo(diff >= 0 ? `+${diff} 兵` : `${diff} 兵`);
   burst(state.x, canvas.height * 0.64, gate.good ? "#22a06b" : "#d73b2e", gate.good ? 22 : 14);
   state.shake = gate.good ? 5 : 9;
-  gate.good ? fanfare() : slash();
+  gate.good ? rewardSound(state.comboChain) : slash();
+}
+
+function enterFever() {
+  state.feverTimer = Math.max(state.feverTimer, 4.8);
+  showToast("下剋上フィーバー！");
+  combo("FEVER");
+  burst(state.x, canvas.height * 0.45, "#f7b538", 40);
+  state.shake = 13;
+  feverSound();
 }
 
 function enterCastle() {
@@ -277,6 +301,7 @@ function resolveCastle() {
 
 function setArmy(value) {
   state.army = Math.max(1, Math.min(9999, Math.floor(value)));
+  state.maxArmy = Math.max(state.maxArmy, state.army);
   updateHud();
 }
 
@@ -331,11 +356,13 @@ function draw() {
   ctx.translate(shakeX, shakeY);
   ctx.clearRect(-20, -20, canvas.width + 40, canvas.height + 40);
   drawWorld();
+  drawProgress();
   drawGates();
   drawEventMarkers();
   drawEnemies();
   drawCastle();
   drawCrowd();
+  drawFever();
   drawParticles();
   ctx.restore();
 }
@@ -344,9 +371,24 @@ function drawWorld() {
   const w = canvas.width;
   const h = canvas.height;
   const roadW = 260;
-  ctx.fillStyle = "#6baa58";
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  sky.addColorStop(0, "#263f34");
+  sky.addColorStop(0.45, "#6e8c4f");
+  sky.addColorStop(1, "#2f4b31");
+  ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "#c89b55";
+
+  ctx.fillStyle = "rgba(42, 28, 22, 0.16)";
+  for (let i = 0; i < 12; i++) {
+    const y = (i * 86 + state.distance * 0.32) % (h + 90) - 70;
+    ctx.fillRect(i % 2 ? w - 76 : 28, y, 48, 18);
+  }
+
+  const road = ctx.createLinearGradient(0, 0, 0, h);
+  road.addColorStop(0, "#765c37");
+  road.addColorStop(0.55, "#a5783d");
+  road.addColorStop(1, "#5f4729");
+  ctx.fillStyle = road;
   ctx.beginPath();
   ctx.moveTo(w / 2 - roadW * 0.34, 0);
   ctx.lineTo(w / 2 + roadW * 0.34, 0);
@@ -369,6 +411,20 @@ function drawWorld() {
     const y = (i * 140 + state.distance * 0.42) % (h + 120) - 80;
     drawBanner(24 + (i % 2) * 322, y, i % 3);
   }
+}
+
+function drawProgress() {
+  if (state.mode === "ready") return;
+  const x = 14;
+  const y = canvas.height - 92;
+  const w = canvas.width - 28;
+  const progress = Math.max(0, Math.min(1, state.distance / state.trackLength));
+  ctx.fillStyle = "rgba(25, 23, 21, 0.34)";
+  roundRect(x, y, w, 8, 4);
+  ctx.fill();
+  ctx.fillStyle = state.feverTimer > 0 ? "#f7b538" : "#fff8e6";
+  roundRect(x, y, w * progress, 8, 4);
+  ctx.fill();
 }
 
 function drawBanner(x, y, type) {
@@ -406,17 +462,25 @@ function drawGates() {
 function drawGate(x, y, gate) {
   const width = GATE_WIDTH;
   const height = GATE_HEIGHT;
-  ctx.fillStyle = gate.good ? "#ead8a7" : "#bfa890";
+  ctx.save();
+  ctx.translate(0, Math.sin(performance.now() / 150 + x) * 2);
+  ctx.fillStyle = "#f5ead2";
   roundRect(x - width / 2, y - height / 2, width, height, 8);
   ctx.fill();
-  ctx.strokeStyle = "#191715";
+  ctx.strokeStyle = gate.good ? "#785b2d" : "#5e382f";
   ctx.lineWidth = 4;
   ctx.stroke();
-  ctx.fillStyle = gate.good ? "#1f7f5b" : "#8f2f2a";
-  ctx.font = "950 18px system-ui";
+  ctx.fillStyle = gate.good ? "#23694f" : "#82322f";
+  ctx.font = "950 23px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  wrapText(gate.label, x, y, 78, 22);
+  ctx.fillText(gate.icon, x, y - 18);
+  ctx.font = "900 15px system-ui";
+  wrapText(gate.label, x, y + 7, 78, 18);
+  ctx.fillStyle = "#191715";
+  ctx.font = "950 16px system-ui";
+  ctx.fillText(gate.sub, x, y + 27);
+  ctx.restore();
 }
 
 function drawEnemies() {
@@ -500,6 +564,30 @@ function drawCrowd() {
   ctx.strokeStyle = "#fff8e6";
   ctx.strokeText(state.army, state.x, startY - 36);
   ctx.fillText(state.army, state.x, startY - 36);
+
+  if (state.comboChain > 1 && state.mode === "run") {
+    ctx.font = "950 18px system-ui";
+    ctx.strokeStyle = "#191715";
+    ctx.lineWidth = 4;
+    ctx.fillStyle = "#f7b538";
+    ctx.strokeText(`${state.comboChain}連鎖`, state.x, startY - 66);
+    ctx.fillText(`${state.comboChain}連鎖`, state.x, startY - 66);
+  }
+}
+
+function drawFever() {
+  if (state.feverTimer <= 0) return;
+  const alpha = Math.min(0.32, state.feverTimer * 0.06);
+  ctx.fillStyle = `rgba(247, 181, 56, ${alpha})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#fff8e6";
+  ctx.font = "1000 28px system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#191715";
+  const text = `下剋上FEVER ${Math.ceil(state.feverTimer)}`;
+  ctx.strokeText(text, canvas.width / 2, 190);
+  ctx.fillText(text, canvas.width / 2, 190);
 }
 
 function drawUnit(x, y, i, enemy = false) {
@@ -629,21 +717,41 @@ function unlockAudio() {
   if (audioCtx.state === "suspended") audioCtx.resume();
 }
 
-function tone(freq, duration, type = "square", volume = 0.03) {
+function tone(freq, duration, type = "square", volume = 0.03, delay = 0) {
   if (!audioCtx) return;
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
+  const start = audioCtx.currentTime + delay;
   osc.type = type;
   osc.frequency.value = freq;
-  gain.gain.value = volume;
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
   osc.connect(gain).connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + duration);
+  osc.start(start);
+  osc.stop(start + duration + 0.02);
+}
+
+function noise(duration, volume = 0.03, delay = 0) {
+  if (!audioCtx) return;
+  const length = Math.floor(audioCtx.sampleRate * duration);
+  const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length);
+  const source = audioCtx.createBufferSource();
+  const gain = audioCtx.createGain();
+  const start = audioCtx.currentTime + delay;
+  source.buffer = buffer;
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+  source.connect(gain).connect(audioCtx.destination);
+  source.start(start);
+  source.stop(start + duration);
 }
 
 function drum(freq, volume) {
-  tone(freq, 0.12, "triangle", volume);
+  tone(freq, 0.16, "triangle", volume);
+  noise(0.06, volume * 0.7);
 }
 
 function tick(freq, volume) {
@@ -651,27 +759,59 @@ function tick(freq, volume) {
 }
 
 function slash() {
-  tone(180, 0.08, "sawtooth", 0.04);
-  setTimeout(() => tone(90, 0.12, "sawtooth", 0.035), 45);
+  tone(260, 0.05, "sawtooth", 0.04);
+  tone(100, 0.12, "sawtooth", 0.035, 0.05);
+  noise(0.09, 0.045, 0.02);
 }
 
 function battleSound() {
-  [120, 95, 170, 80].forEach((freq, i) => {
-    setTimeout(() => tone(freq, 0.08, i % 2 ? "sawtooth" : "triangle", 0.045), i * 45);
-  });
+  [88, 110, 92, 145].forEach((freq, i) => tone(freq, 0.1, i % 2 ? "sawtooth" : "triangle", 0.05, i * 0.05));
+  noise(0.18, 0.04, 0.08);
 }
 
-function fanfare(big = false) {
-  [420, 530, big ? 760 : 640].forEach((freq, i) => {
-    setTimeout(() => tone(freq, 0.09, "square", 0.025), i * 70);
-  });
+function rewardSound(chain = 1) {
+  const base = chain >= 3 ? 330 : 262;
+  [base, base * 1.25, base * 1.5].forEach((freq, i) => tone(freq, 0.08, "triangle", 0.026 + chain * 0.002, i * 0.055));
+  if (chain >= 3) tone(784, 0.18, "square", 0.03, 0.18);
 }
 
 function evolveSound() {
-  drum(72, 0.07);
-  [196, 247, 294, 392, 523, 784].forEach((freq, i) => {
-    setTimeout(() => tone(freq, 0.12, i < 3 ? "triangle" : "square", 0.034), 90 + i * 72);
+  drum(66, 0.09);
+  [196, 247, 294, 392, 523, 784, 1046].forEach((freq, i) => {
+    tone(freq, 0.15, i < 3 ? "triangle" : "square", 0.038, 0.1 + i * 0.075);
   });
+  noise(0.25, 0.03, 0.42);
+}
+
+function feverSound() {
+  drum(72, 0.08);
+  [330, 392, 494, 659, 988].forEach((freq, i) => tone(freq, 0.11, "square", 0.035, i * 0.055));
+}
+
+function warCry() {
+  drum(72, 0.08);
+  tone(146, 0.22, "sawtooth", 0.035, 0.08);
+  tone(220, 0.18, "triangle", 0.03, 0.18);
+  noise(0.12, 0.02, 0.2);
+}
+
+function startBgm() {
+  if (bgmTimer || !audioCtx) return;
+  bgmStep = 0;
+  bgmTimer = setInterval(playBgmStep, 185);
+}
+
+function playBgmStep() {
+  if (!audioCtx || state.mode === "ready" || state.mode === "result") return;
+  const scale = [147, 165, 196, 220, 247, 294, 330, 392];
+  const pattern = [0, 2, 4, 2, 5, 4, 2, 1, 0, 3, 5, 7, 5, 4, 2, 1];
+  const step = bgmStep % pattern.length;
+  const fever = state.feverTimer > 0;
+  if (step % 2 === 0) drum(step % 4 === 0 ? 58 : 74, fever ? 0.045 : 0.028);
+  if (step % 4 === 2) noise(0.035, 0.014);
+  tone(scale[pattern[step]] * (fever ? 1.5 : 1), 0.105, "triangle", fever ? 0.028 : 0.017);
+  if (step === 8 || (fever && step === 12)) tone(440, 0.24, "sawtooth", 0.018);
+  bgmStep += 1;
 }
 
 function restart() {

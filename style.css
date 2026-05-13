@@ -1,12 +1,12 @@
 :root {
   color-scheme: light;
-  --ink: #191715;
-  --paper: #fff8e6;
-  --red: #d73b2e;
-  --gold: #f7b538;
-  --green: #1f9f72;
-  --blue: #2374ab;
-  --wood: #7a4f2a;
+  --ink: #17120f;
+  --paper: #fff3d0;
+  --red: #c9322c;
+  --gold: #e7aa2e;
+  --green: #27755b;
+  --blue: #245f82;
+  --wood: #5b3726;
 }
 
 * {
@@ -20,8 +20,8 @@ body {
   margin: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 18% 18%, rgba(247, 181, 56, 0.22), transparent 22rem),
-    linear-gradient(140deg, #29424c 0%, #58372c 48%, #7d2f2b 100%);
+    radial-gradient(circle at 50% 12%, rgba(231, 170, 46, 0.22), transparent 24rem),
+    linear-gradient(140deg, #211715 0%, #45231e 48%, #1f3028 100%);
   color: var(--ink);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -53,8 +53,8 @@ button {
   overflow: hidden;
   border: 5px solid rgba(25, 23, 21, 0.9);
   border-radius: 8px;
-  background: #6eaa60;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  background: #2f4b31;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.48);
 }
 
 #game {
@@ -83,10 +83,10 @@ button {
 .stat {
   min-width: 82px;
   padding: 8px 10px;
-  border: 3px solid rgba(25, 23, 21, 0.9);
+  border: 3px solid rgba(23, 18, 15, 0.95);
   border-radius: 8px;
-  background: rgba(255, 248, 230, 0.94);
-  box-shadow: 0 4px 0 rgba(25, 23, 21, 0.22);
+  background: linear-gradient(180deg, rgba(255, 243, 208, 0.98), rgba(216, 178, 104, 0.96));
+  box-shadow: 0 4px 0 rgba(23, 18, 15, 0.28), inset 0 2px 0 rgba(255, 255, 255, 0.38);
   text-align: center;
 }
 
@@ -99,7 +99,7 @@ button {
 .label {
   display: block;
   margin-bottom: 2px;
-  color: #63564d;
+  color: #5b3726;
   font-size: 11px;
   font-weight: 800;
 }
@@ -122,7 +122,7 @@ button {
   height: 58px;
   border: 3px solid rgba(25, 23, 21, 0.92);
   border-radius: 8px;
-  background: var(--paper);
+  background: linear-gradient(180deg, #fff4d1, #b99a62);
   color: var(--ink);
   box-shadow: 0 5px 0 rgba(25, 23, 21, 0.26);
   font-weight: 950;
@@ -136,7 +136,7 @@ button {
 
 .main-btn {
   flex: 1;
-  background: var(--gold);
+  background: linear-gradient(180deg, #ffd955, #b97223);
   font-size: 22px;
 }
 
@@ -164,8 +164,8 @@ button {
   padding: 9px 12px;
   border: 3px solid rgba(25, 23, 21, 0.9);
   border-radius: 8px;
-  background: rgba(255, 248, 230, 0.95);
-  box-shadow: 0 5px 0 rgba(25, 23, 21, 0.2);
+  background: linear-gradient(180deg, rgba(255, 243, 208, 0.98), rgba(222, 186, 111, 0.96));
+  box-shadow: 0 5px 0 rgba(25, 23, 21, 0.24);
   font-size: 17px;
   font-weight: 950;
   opacity: 0;
@@ -178,11 +178,11 @@ button {
 }
 
 .combo {
-  top: 152px;
-  color: #fff8e6;
-  font-size: clamp(25px, 8vw, 48px);
+  top: 146px;
+  color: #ffe071;
+  font-size: clamp(29px, 9vw, 54px);
   font-weight: 1000;
-  text-shadow: 0 4px 0 #191715, 0 0 18px rgba(247, 181, 56, 0.7);
+  text-shadow: 0 4px 0 #17120f, 0 0 18px rgba(247, 181, 56, 0.9);
   opacity: 0;
 }
 
@@ -209,7 +209,8 @@ button {
   padding: 24px 18px 18px;
   border: 4px solid #191715;
   border-radius: 8px;
-  background: var(--paper);
+  background:
+    linear-gradient(180deg, rgba(255, 243, 208, 0.98), rgba(232, 197, 121, 0.98));
   box-shadow: 0 8px 0 rgba(25, 23, 21, 0.25);
   text-align: center;
 }
