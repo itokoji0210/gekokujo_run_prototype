@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>下剋上RUN</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <section class="game-wrap" aria-label="下剋上RUN">
+      <canvas id="game" width="390" height="720"></canvas>
+
+      <div class="hud hud-top">
+        <div class="stat">
+          <span class="label">兵力</span>
+          <strong id="army">3</strong>
+        </div>
+        <div class="stat">
+          <span class="label">第</span>
+          <strong><span id="stage">1</span>戦</strong>
+        </div>
+        <div class="stat rank">
+          <span class="label">身分</span>
+          <strong id="rank">農民</strong>
+        </div>
+      </div>
+
+      <div class="toast" id="toast" aria-live="polite"></div>
+      <div class="combo" id="combo"></div>
+
+      <div class="hud hud-bottom">
+        <button id="leftBtn" class="move-btn" type="button" aria-label="左へ">‹</button>
+        <button id="actionBtn" class="main-btn" type="button">出陣</button>
+        <button id="rightBtn" class="move-btn" type="button" aria-label="右へ">›</button>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div class="result-panel">
+          <p class="kicker" id="resultKicker">勝利</p>
+          <h1 id="resultTitle">城を落とした！</h1>
+          <p id="resultText">成り上がり継続中</p>
+          <button id="restartBtn" type="button">もう一戦</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>
